@@ -1,0 +1,88 @@
+name: DBMS Autograding
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  autograde:
+    runs-on: ubuntu-latest
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: CollegeDB
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -uroot -proot"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=20
+
+    steps:
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Install MySQL Client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mysql-client
+
+      - name: Wait for MySQL
+        run: |
+          until mysqladmin ping -h127.0.0.1 -uroot -proot --silent
+          do
+            echo "Waiting for MySQL..."
+            sleep 2
+          done
+
+      - name: Detect Changed Assignment
+        id: changed
+        run: |
+          echo "Changed files:"
+          git diff --name-only HEAD~1 HEAD
+
+          folders=$(git diff --name-only HEAD~1 HEAD | cut -d'/' -f1 | sort -u)
+
+          echo "Folders changed:"
+          echo "$folders"
+
+          echo "folders<<EOF" >> $GITHUB_OUTPUT
+          echo "$folders" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Run Tests
+        run: |
+
+          for folder in ${{ steps.changed.outputs.folders }}
+          do
+
+            if [ -f "$folder/tests/test.sh" ]; then
+
+              echo "=================================="
+              echo "Running tests for $folder"
+              echo "=================================="
+
+              chmod +x "$folder/tests/test.sh"
+
+              (
+                cd "$folder"
+                ./tests/test.sh
+              )
+
+            else
+              echo "Skipping $folder"
+            fi
+
+          done
+
+      - name: Completed
+        run: echo "Autograding Completed Successfully"
